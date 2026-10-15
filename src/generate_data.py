@@ -7,6 +7,7 @@ MATLAB Central File Exchange. Retrieved May 1, 2022.
 """
 
 import numpy as np
+from matplotlib import animation
 from matplotlib import pyplot as plt
 
 
@@ -144,6 +145,61 @@ def generate_data(length: float, method: callable) -> tuple[np.ndarray, np.ndarr
     vy[0, 2] = vy30
 
     return method(t, x, y, M, ax, ay, G, step, vx, vy)
+
+
+def plot_data_animated(x, y):
+    fig, ax = plt.subplots()
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_title("Three-Body Problem")
+    ax.grid(True)
+    ax.set_aspect("equal", adjustable="box")
+
+    # Keep the viewing area fixed throughout the animation
+    margin = 1
+    ax.set_xlim(np.min(x) - margin, np.max(x) + margin)
+    ax.set_ylim(np.min(y) - margin, np.max(y) + margin)
+
+    colors = ["r", "g", "b"]
+    labels = ["Body 1", "Body 2", "Body 3"]
+
+    # Lines show the paths travelled by each body
+    lines = []
+    for i in range(3):
+        lines.append(ax.plot([], [], color=colors[i], label=labels[i])[0])
+
+    # Dots show the current positions of the bodies
+    bodies = []
+    for i in range(3):
+        bodies.append(ax.plot([], [], "o", color=colors[i], markersize=8)[0])
+
+    ax.legend()
+
+    def init():
+        for line, body in zip(lines, bodies):
+            line.set_data([], [])
+            body.set_data([], [])
+        return lines + bodies
+
+    def update(frame):
+        for i, (line, body) in enumerate(zip(lines, bodies)):
+            line.set_data(x[: frame + 1, i], y[: frame + 1, i])
+            body.set_data([x[frame, i]], [y[frame, i]])
+
+        return lines + bodies
+
+    ani = animation.FuncAnimation(
+        fig,
+        update,
+        frames=range(0, len(x), 10),
+        init_func=init,
+        interval=10,
+        blit=True,
+        repeat=True,
+    )
+
+    plt.show()
+    return ani
 
 
 def plot_data(x, y):
