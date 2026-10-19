@@ -2,7 +2,7 @@ import h5py
 
 from generate_data import plot_data, plot_data_animated
 
-ANIMATE = True
+ANIMATE = False
 
 
 def main() -> None:

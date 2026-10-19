@@ -3,7 +3,7 @@ import numpy as np
 
 from dataset_generator import SEQUENCE_TIME, STEP, generate_valid_sequence
 
-n_trajectories = 20
+n_trajectories = 1000
 n_steps = round(SEQUENCE_TIME / STEP) + 1
 
 with h5py.File("three_body.h5", "w") as f:

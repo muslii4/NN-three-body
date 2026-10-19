@@ -1,11 +1,12 @@
 from math import hypot
 
 import numpy as np
+from numba import njit
 
 from generate_data import Array2D, InitialConditions, generate_data
 
 PAIRS = [(0, 1), (0, 2), (1, 2)]
-SEQUENCE_TIME = 20.0
+SEQUENCE_TIME = 15.0
 MAX_DISTANCE_FROM_ORIGIN = 20.0
 MAX_ENERGY_DIFF = 1e-6
 MIN_PAIRWISE_DISTANCE = 0.1
@@ -14,7 +15,7 @@ MAX_PAIRWISE_DISTANCE = 20.0
 MAX_INIT_POS = 2.0
 MAX_INIT_VEL = 1.0
 
-STEP = 0.001
+STEP = 1e-4
 
 
 def sample_ic(
@@ -68,6 +69,7 @@ def sample_ic(
         )
 
 
+@njit
 def total_energy(
     px: InitialConditions,
     py: InitialConditions,
@@ -75,8 +77,8 @@ def total_energy(
     vy: InitialConditions,
 ):
     kinetic = 0
-    kinetic += sum(v**2 for v in vx)
-    kinetic += sum(v**2 for v in vy)
+    kinetic += sum([v**2 for v in vx])
+    kinetic += sum([v**2 for v in vy])
     kinetic /= 2
 
     potential = 0
@@ -89,8 +91,6 @@ def total_energy(
 
 
 def pair_distances(px, py):
-    """Pairwise distances, shape (..., 3) for pairs (0,1), (0,2), (1,2)."""
-    px, py = np.asarray(px, float), np.asarray(py, float)
     return np.stack(
         [np.hypot(px[..., i] - px[..., j], py[..., i] - py[..., j]) for i, j in PAIRS],
         axis=-1,
@@ -100,12 +100,14 @@ def pair_distances(px, py):
 def generate_valid_sequence(rng) -> tuple[Array2D, Array2D, Array2D, Array2D]:
     while True:
         ix, iy, ivx, ivy = sample_ic(rng)
+        initial_e = total_energy(ix, iy, ivx, ivy)
+        if initial_e >= 0:
+            continue
         x, y, vx, vy = generate_data(SEQUENCE_TIME, "verlet", ix, iy, ivx, ivy, STEP)
 
-        initial_e = total_energy(ix, iy, ivx, ivy)
         end_e = total_energy(x[-1], y[-1], vx[-1], vy[-1])
         delta_e = abs(initial_e - end_e)
-        if delta_e > MAX_ENERGY_DIFF:
+        if delta_e / abs(initial_e) > MAX_ENERGY_DIFF:
             print("Skipping: Energy not conserved")
             continue
         elif x.max() > MAX_DISTANCE_FROM_ORIGIN or y.max() > MAX_DISTANCE_FROM_ORIGIN:

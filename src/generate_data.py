@@ -12,6 +12,7 @@ import numpy as np
 from matplotlib import animation
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
+from numba import njit
 
 Array1D = np.ndarray[tuple[int], np.dtype[np.float64]]
 Array2D = np.ndarray[tuple[int, int], np.dtype[np.float64]]
@@ -19,6 +20,7 @@ InitialConditions = tuple[float, float, float]
 IntegrationMethod = Literal["euler", "verlet"]
 
 
+@njit
 def _compute_a(
     x: Array1D,
     y: Array1D,
@@ -28,31 +30,22 @@ def _compute_a(
     G: float,
 ) -> tuple[Array1D, Array1D]:
     """Compute the acceleration of each body at a given time."""
-    ax_tot = ay_tot = np.zeros_like(M)
-    # Loop over the three bodies
     for j in range(3):
-        # Distance between the current body and the others (also with itself)
-        dx = x[j] - x
-        dy = y[j] - y
+        for i in range(3):
+            if i == j:
+                ax[i, j] = 0.0
+                ay[i, j] = 0.0
+            else:
+                dx = x[j] - x[i]
+                dy = y[j] - y[i]
+                r3 = np.sqrt(dx**2 + dy**2) ** 3
+                ax[i, j] = (-dx * M[i] * G) / r3
+                ay[i, j] = (-dy * M[i] * G) / r3
 
-        # Acceleration according to Newton's law.
-        # The division by zero for a body interacting with itself produces NaN;
-        # it is handled below, so the warning is silenced.
-        with np.errstate(divide="ignore", invalid="ignore"):
-            ax[:, j] = (-dx * M * G) / (np.sqrt(dx**2 + dy**2)) ** 3
-            ay[:, j] = (-dy * M * G) / (np.sqrt(dx**2 + dy**2)) ** 3
-
-        # Change NaN into zeros. The NaN comes from the interaction of a body
-        # with itself, since (dx, dy) = 0.
-        ax[np.isnan(ax)] = 0
-        ay[np.isnan(ay)] = 0
-
-        ax_tot = np.sum(ax, axis=0)
-        ay_tot = np.sum(ay, axis=0)
-
-    return ax_tot, ay_tot
+    return np.sum(ax, axis=0), np.sum(ay, axis=0)
 
 
+@njit
 def generate_data(
     length: float,
     method: IntegrationMethod = "verlet",
@@ -63,7 +56,7 @@ def generate_data(
     step: float = 0.001,
 ) -> tuple[Array2D, Array2D, Array2D, Array2D]:
     # Body mass
-    m1 = m2 = m3 = 1
+    m1 = m2 = m3 = 1.0
     M = np.array([m1, m2, m3])
 
     # Newton constant
