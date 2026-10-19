@@ -60,10 +60,8 @@ def generate_data(
     initial_y: InitialConditions = (1.0, -1.0, 0.0),
     initial_vx: InitialConditions = (0.3471, 0.3471, -0.6942),
     initial_vy: InitialConditions = (0.5327, 0.5327, -1.0654),
-) -> tuple[Array2D, Array2D]:
-    # Time step [s]
-    step = 0.001
-
+    step: float = 0.001,
+) -> tuple[Array2D, Array2D, Array2D, Array2D]:
     # Body mass
     m1 = m2 = m3 = 1
     M = np.array([m1, m2, m3])
@@ -71,16 +69,16 @@ def generate_data(
     # Newton constant
     G = 1
 
-    t = np.arange(0, length + step, step)
+    n_steps = round(length / step)
 
     # Preparing the vector to store the solution.
     # There are 3 columns since we want to simulate three bodies.
-    # One extra row is needed because the loop also stores x(i+1).
-    x = np.zeros((len(t) + 1, 3))
-    y = np.zeros((len(t) + 1, 3))
+    # One extra row stores the initial state before integration.
+    x = np.zeros((n_steps + 1, 3))
+    y = np.zeros((n_steps + 1, 3))
 
-    vx = np.zeros((len(t) + 1, 3))
-    vy = np.zeros((len(t) + 1, 3))
+    vx = np.zeros((n_steps + 1, 3))
+    vy = np.zeros((n_steps + 1, 3))
 
     ax = np.zeros((3, 3))
     ay = np.zeros((3, 3))
@@ -94,7 +92,7 @@ def generate_data(
     if method not in ("euler", "verlet"):
         raise ValueError(f"Unknown integration method: {method}")
 
-    for i in range(len(t)):
+    for i in range(n_steps):
         ax_tot, ay_tot = _compute_a(x[i, :], y[i, :], M, ax, ay, G)
 
         if method == "verlet":
@@ -112,7 +110,7 @@ def generate_data(
             vx[i + 1, :] = vx[i, :] + step * ax_tot
             vy[i + 1, :] = vy[i, :] + step * ay_tot
 
-    return vx, vy
+    return x, y, vx, vy
 
 
 def plot_data_animated(
