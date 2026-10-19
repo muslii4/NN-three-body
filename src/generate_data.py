@@ -6,13 +6,29 @@ andrea (2022). Three body problem
 MATLAB Central File Exchange. Retrieved May 1, 2022.
 """
 
+from typing import Literal
+
 import numpy as np
 from matplotlib import animation
 from matplotlib import pyplot as plt
+from matplotlib.lines import Line2D
+
+Array1D = np.ndarray[tuple[int], np.dtype[np.float64]]
+Array2D = np.ndarray[tuple[int, int], np.dtype[np.float64]]
+InitialConditions = tuple[float, float, float]
+IntegrationMethod = Literal["euler", "verlet"]
 
 
-def _compute_a(x, y, M, ax, ay, G):
+def _compute_a(
+    x: Array1D,
+    y: Array1D,
+    M: Array1D,
+    ax: Array2D,
+    ay: Array2D,
+    G: float,
+) -> tuple[Array1D, Array1D]:
     """Compute the acceleration of each body at a given time."""
+    ax_tot = ay_tot = np.zeros_like(M)
     # Loop over the three bodies
     for j in range(3):
         # Distance between the current body and the others (also with itself)
@@ -37,43 +53,14 @@ def _compute_a(x, y, M, ax, ay, G):
     return ax_tot, ay_tot
 
 
-def verlet(t, x, y, M, ax, ay, G, step, vx, vy) -> tuple[np.ndarray, np.ndarray]:
-    for i in range(len(t)):
-        # Compute the acceleration at the current time
-        ax_tot, ay_tot = _compute_a(x[i, :], y[i, :], M, ax, ay, G)
-
-        # Compute the next time position given the current acceleration
-        x[i + 1, :] = x[i, :] + step * vx[i, :] + 1 / 2 * (ax_tot * step**2)
-        y[i + 1, :] = y[i, :] + step * vy[i, :] + 1 / 2 * (ay_tot * step**2)
-
-        # Compute the next time acceleration
-        ax_tot_next, ay_tot_next = _compute_a(x[i + 1, :], y[i + 1, :], M, ax, ay, G)
-
-        # Compute the next time velocity according to the Verlet method
-        vx[i + 1, :] = vx[i, :] + 1 / 2 * (ax_tot + ax_tot_next) * step
-        vy[i + 1, :] = vy[i, :] + 1 / 2 * (ay_tot + ay_tot_next) * step
-
-    return vx, vy
-
-
-def euler(t, x, y, M, ax, ay, G, step, vx, vy) -> tuple[np.ndarray, np.ndarray]:
-    # Loop over each time step
-    for i in range(len(t)):
-        # Compute the current acceleration
-        ax_tot, ay_tot = _compute_a(x[i, :], y[i, :], M, ax, ay, G)
-
-        # Update the position
-        x[i + 1, :] = x[i, :] + step * vx[i, :]
-        y[i + 1, :] = y[i, :] + step * vy[i, :]
-
-        # Update the velocity
-        vx[i + 1, :] = vx[i, :] + step * ax_tot
-        vy[i + 1, :] = vy[i, :] + step * ay_tot
-
-    return vx, vy
-
-
-def generate_data(length: float, method: callable) -> tuple[np.ndarray, np.ndarray]:
+def generate_data(
+    length: float,
+    method: IntegrationMethod = "verlet",
+    initial_x: InitialConditions = (0.0, 0.0, 0.0),
+    initial_y: InitialConditions = (1.0, -1.0, 0.0),
+    initial_vx: InitialConditions = (0.3471, 0.3471, -0.6942),
+    initial_vy: InitialConditions = (0.5327, 0.5327, -1.0654),
+) -> tuple[Array2D, Array2D]:
     # Time step [s]
     step = 0.001
 
@@ -85,35 +72,6 @@ def generate_data(length: float, method: callable) -> tuple[np.ndarray, np.ndarr
     G = 1
 
     t = np.arange(0, length + step, step)
-
-    # Initial conditions -- positions
-    # Initial conditions were taken from:
-    #   Numerical Search for Periodic Solutions in the Vicinity of the
-    #   Figure-Eight Orbit: Slaloming around Singularities on the Shape Sphere
-    #   Milovan Suvakov
-    #   C. Moore, Phys. Rev. Lett. 70, 3675 (1993).
-    #   C. Simo, Contemp Math 292 20928 (2002).
-
-    x10 = 0  # -1
-    y10 = 1  # 0
-
-    x20 = -x10
-    y20 = -y10
-
-    x30 = 0
-    y30 = 0
-
-    # Initial conditions -- velocity
-    vx10 = 0.3471
-    vy10 = 0.5327
-
-    vx20 = vx10
-    vy20 = vy10
-
-    vx30 = -2 * vx10
-    vy30 = -2 * vy10
-
-    # Simple Euler method
 
     # Preparing the vector to store the solution.
     # There are 3 columns since we want to simulate three bodies.
@@ -128,26 +86,39 @@ def generate_data(length: float, method: callable) -> tuple[np.ndarray, np.ndarr
     ay = np.zeros((3, 3))
 
     # Assign the initial condition to the first element of the solution vectors
-    x[0, 0] = x10
-    x[0, 1] = x20
-    x[0, 2] = x30
+    x[0, :] = initial_x
+    y[0, :] = initial_y
+    vx[0, :] = initial_vx
+    vy[0, :] = initial_vy
 
-    y[0, 0] = y10
-    y[0, 1] = y20
-    y[0, 2] = y30
+    if method not in ("euler", "verlet"):
+        raise ValueError(f"Unknown integration method: {method}")
 
-    vx[0, 0] = vx10
-    vx[0, 1] = vx20
-    vx[0, 2] = vx30
+    for i in range(len(t)):
+        ax_tot, ay_tot = _compute_a(x[i, :], y[i, :], M, ax, ay, G)
 
-    vy[0, 0] = vy10
-    vy[0, 1] = vy20
-    vy[0, 2] = vy30
+        if method == "verlet":
+            x[i + 1, :] = x[i, :] + step * vx[i, :] + 1 / 2 * (ax_tot * step**2)
+            y[i + 1, :] = y[i, :] + step * vy[i, :] + 1 / 2 * (ay_tot * step**2)
 
-    return method(t, x, y, M, ax, ay, G, step, vx, vy)
+            ax_tot_next, ay_tot_next = _compute_a(
+                x[i + 1, :], y[i + 1, :], M, ax, ay, G
+            )
+            vx[i + 1, :] = vx[i, :] + 1 / 2 * (ax_tot + ax_tot_next) * step
+            vy[i + 1, :] = vy[i, :] + 1 / 2 * (ay_tot + ay_tot_next) * step
+        else:
+            x[i + 1, :] = x[i, :] + step * vx[i, :]
+            y[i + 1, :] = y[i, :] + step * vy[i, :]
+            vx[i + 1, :] = vx[i, :] + step * ax_tot
+            vy[i + 1, :] = vy[i, :] + step * ay_tot
+
+    return vx, vy
 
 
-def plot_data_animated(x, y):
+def plot_data_animated(
+    x: Array2D,
+    y: Array2D,
+) -> animation.FuncAnimation:
     fig, ax = plt.subplots()
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -175,13 +146,13 @@ def plot_data_animated(x, y):
 
     ax.legend()
 
-    def init():
+    def init() -> list[Line2D]:
         for line, body in zip(lines, bodies):
             line.set_data([], [])
             body.set_data([], [])
         return lines + bodies
 
-    def update(frame):
+    def update(frame: int) -> list[Line2D]:
         for i, (line, body) in enumerate(zip(lines, bodies)):
             line.set_data(x[: frame + 1, i], y[: frame + 1, i])
             body.set_data([x[frame, i]], [y[frame, i]])
@@ -191,7 +162,7 @@ def plot_data_animated(x, y):
     ani = animation.FuncAnimation(
         fig,
         update,
-        frames=range(0, len(x), 10),
+        frames=range(0, len(x), 30),
         init_func=init,
         interval=10,
         blit=True,
@@ -202,7 +173,10 @@ def plot_data_animated(x, y):
     return ani
 
 
-def plot_data(x, y):
+def plot_data(
+    x: Array2D,
+    y: Array2D,
+) -> None:
     plt.figure(1)
     plt.xlabel("x")
     plt.ylabel("y")
