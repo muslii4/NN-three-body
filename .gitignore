@@ -220,3 +220,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+dataset_1k_v1.h5:Zone.Identifier
