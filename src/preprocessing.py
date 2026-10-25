@@ -16,7 +16,7 @@ def load_dataset(
     Args:
     path (str): The path of the file
     number_trajectories (int): The number of trajectories from the entire dataset that are used for training/testing the model.
-    points_trajectory (int): The number of discrete points in each trajectory chosen for training/testing the model.
+    points_trajectory (int): The number of steps for discrete points in each trajectory chosen for training/testing the model.
 
     Returns:
     loader (torch.Tensor): The loaded data.
