@@ -7,7 +7,10 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 def load_dataset(
-    path: str, number_trajectories: int = 10, points_trajectory: int = 10
+    path: str,
+    number_trajectories: int = 10,
+    points_trajectory: int = 10,
+    batchsize: int = 32,
 ) -> torch.Tensor:
     """
     This function prepares the dataset to be the input for a neural network.
@@ -26,8 +29,8 @@ def load_dataset(
     with h5py.File(filepath, "r") as file:
         print(file.keys())
         print(file["positions"].shape)
-        positions = file["positions"][:number_trajectories, ::points_trajectory]
-        velocities = file["velocities"][:number_trajectories, ::points_trajectory]
+        positions = file["positions"][:number_trajectories][::points_trajectory]
+        velocities = file["velocities"][:number_trajectories][::points_trajectory]
 
     print(f"positions shape: {positions.shape}")
     print(f"velocities shape: {velocities.shape}")
@@ -48,6 +51,39 @@ def load_dataset(
     y = torch.tensor(y, dtype=torch.float32)
 
     dataset = TensorDataset(x, y)
-    loader = DataLoader(dataset, batch_size=32)
+    loader = DataLoader(dataset, batch_size=batchsize)
 
     return loader
+
+
+def split_dataset(
+    loader: torch.Tensor,
+    training_fraction: int = 0.6,
+    validation_fraction: int = 0.2,
+    seed: int = 42,
+    batchsize: int = 32,
+) -> list[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Function that splits the entire dataset into 3 fractions.
+
+    Args:
+    loader (torch.Tensor)
+    """
+    dataset = loader.dataset
+
+    n = len(dataset)
+    samples_train = training_fraction * n
+    samples_val = validation_fraction * n
+    samples_eval = n - samples_train - samples_val
+
+    generator = torch.Generator().manual_seed(seed)
+
+    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
+        dataset, [samples_train, samples_val, samples_eval], generator=generator
+    )
+
+    train_loader = DataLoader(train_dataset, batch_size=batchsize)
+    val_loader = DataLoader(val_dataset, batch_size=batchsize)
+    test_loader = DataLoader(test_dataset, batch_size=batchsize)
+
+    return train_loader, val_loader, test_loader
