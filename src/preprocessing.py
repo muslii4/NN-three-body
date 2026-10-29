@@ -8,9 +8,12 @@ from torch.utils.data import DataLoader, TensorDataset
 
 def load_dataset(
     path: str,
-    number_trajectories: int = 10,
-    points_trajectory: int = 10,
+    number_trajectories: int = 50,
+    points_trajectory: int = 50,
     batchsize: int = 32,
+    training_fraction: float = 0.6,
+    validation_fraction: float = 0.2,
+    seed: int = 42,
 ) -> torch.Tensor:
     """
     This function prepares the dataset to be the input for a neural network.
@@ -20,17 +23,21 @@ def load_dataset(
     path (str): The path of the file
     number_trajectories (int): The number of trajectories from the entire dataset that are used for training/testing the model.
     points_trajectory (int): The number of discrete points in each trajectory chosen for training/testing the model.
+    batchsize (int): Preferred batchsize.
+    training_fraction (int): The percentage of the dataset that is used for training.
+    validation_fraction (int): The percentage of the dataset that is used for validation.
+    seed (int): To ensure the robustness of the results, the seed is fixed during the experiments.
 
     Returns:
-    loader (torch.Tensor): The loaded data.
+    train_loader, val_loader, test_loader (torch.Tensor, torch.Tensor, torch.Tensor): Loaded data for each dataset.
     """
     filepath = Path(path)
 
     with h5py.File(filepath, "r") as file:
         print(file.keys())
         print(file["positions"].shape)
-        positions = file["positions"][:number_trajectories][::points_trajectory]
-        velocities = file["velocities"][:number_trajectories][::points_trajectory]
+        positions = file["positions"][:number_trajectories, :points_trajectory]
+        velocities = file["velocities"][:number_trajectories, :points_trajectory]
 
     print(f"positions shape: {positions.shape}")
     print(f"velocities shape: {velocities.shape}")
@@ -51,30 +58,13 @@ def load_dataset(
     y = torch.tensor(y, dtype=torch.float32)
 
     dataset = TensorDataset(x, y)
-    loader = DataLoader(dataset, batch_size=batchsize)
+    samples_train = int(training_fraction * len(dataset))
+    samples_val = int(validation_fraction * len(dataset))
+    samples_eval = len(dataset) - samples_train - samples_val
 
-    return loader
-
-
-def split_dataset(
-    loader: torch.Tensor,
-    training_fraction: int = 0.6,
-    validation_fraction: int = 0.2,
-    seed: int = 42,
-    batchsize: int = 32,
-) -> list[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Function that splits the entire dataset into 3 fractions.
-
-    Args:
-    loader (torch.Tensor)
-    """
-    dataset = loader.dataset
-
-    n = len(dataset)
-    samples_train = training_fraction * n
-    samples_val = validation_fraction * n
-    samples_eval = n - samples_train - samples_val
+    print(
+        f"size training dataset: {samples_train}, size val dataset: {samples_val}, size eval dataset: {samples_eval}"
+    )
 
     generator = torch.Generator().manual_seed(seed)
 
