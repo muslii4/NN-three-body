@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 
@@ -39,3 +40,19 @@ def validate_one_epoch(model, dataloader, criterion, device):
             total_samples = total_samples + batchsize
 
     return total_loss / total_samples
+
+
+def evaluate(model, dataloader, device):
+    predictions = []
+    labels = []
+    model.eval()
+    with torch.no_grad():
+        for x, y in dataloader:
+            x = x.to(device)
+            y = y.to(device)
+            y_predictions = model(x)
+            predictions.append(y_predictions.cpu().numpy())
+            labels.append(y.cpu().numpy())
+    predictions = np.concatenate(predictions)
+    labels = np.concatenate(labels)
+    return predictions, labels

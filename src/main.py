@@ -1,11 +1,12 @@
 import numpy as np
 import torch
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from dataset_generator import sample_ic
 from generate_data import generate_data
 from models.MLP import MLP
 from preprocessing import load_dataset
-from training import train_one_epoch, validate_one_epoch
+from training import evaluate, train_one_epoch, validate_one_epoch
 
 SEED = 42
 EPOCHS_LEARNING = 100
@@ -72,3 +73,13 @@ for epoch in range(EPOCHS_VALIDATION):
         device=device,
     )
     print(f"Validation Epoch {epoch + 1}, Loss: {validation_loss:.6f}")
+
+predictions, labels = evaluate(model=model, dataloader=test_loader, device=device)
+
+predictions = predictions.reshape(-1)
+labels = labels.reshape(-1)
+
+mae = mean_absolute_error(labels, predictions)
+mse = mean_squared_error(labels, predictions)
+
+print(f"MSE={mse}, MAE={mae}")
