@@ -1,3 +1,5 @@
+"""Utilities for sampling and validating three-body trajectories."""
+
 from math import hypot
 
 import numpy as np
@@ -25,6 +27,23 @@ def sample_ic(
     vel_range: float = MAX_INIT_VEL,
     d_min: float = 0.2,
 ) -> tuple[InitialConditions, InitialConditions, InitialConditions, InitialConditions]:
+    """Sample center-of-mass-balanced positions and velocities.
+
+    Samples two bodies uniformly and computes the third body's state so that
+    the total linear momentum and center of mass are zero. Samples containing
+    an initial pairwise distance smaller than ``d_min`` are rejected.
+
+    Args:
+        rng: Random number generator used for sampling.
+        m: Masses of the three bodies.
+        pos_range: Absolute bound for the sampled position coordinates.
+        vel_range: Absolute bound for the sampled velocity coordinates.
+        d_min: Minimum allowed initial distance between any two bodies.
+
+    Returns:
+        Four three-element tuples containing x positions, y positions, x
+        velocities, and y velocities, respectively.
+    """
     masses = np.asarray(m)
     while True:
         x1 = np.array([1.0, 0.0])
@@ -76,6 +95,17 @@ def total_energy(
     vx: InitialConditions,
     vy: InitialConditions,
 ):
+    """Return the Newtonian kinetic plus potential energy of three bodies.
+
+    Args:
+        px: X positions of the bodies.
+        py: Y positions of the bodies.
+        vx: X velocities of the bodies.
+        vy: Y velocities of the bodies.
+
+    Returns:
+        Scalar total mechanical energy.
+    """
     kinetic = 0
     kinetic += sum([v**2 for v in vx])
     kinetic += sum([v**2 for v in vy])
@@ -91,6 +121,16 @@ def total_energy(
 
 
 def pair_distances(px, py):
+    """Compute distances for the three unique body pairs.
+
+    Args:
+        px: Array containing x coordinates for each body.
+        py: Array containing y coordinates for each body.
+
+    Returns:
+        An array whose final dimension contains distances for pairs
+        ``(0, 1)``, ``(0, 2)``, and ``(1, 2)``.
+    """
     return np.stack(
         [np.hypot(px[..., i] - px[..., j], py[..., i] - py[..., j]) for i, j in PAIRS],
         axis=-1,
@@ -98,6 +138,18 @@ def pair_distances(px, py):
 
 
 def generate_valid_sequence(rng) -> tuple[Array2D, Array2D, Array2D, Array2D]:
+    """Generate a trajectory satisfying energy and distance constraints.
+
+    Candidate initial conditions and trajectories are sampled until the
+    trajectory remains bound, numerically conserves energy, and stays within
+    the configured distance limits.
+
+    Args:
+        rng: Random number generator used to sample initial conditions.
+
+    Returns:
+        Position and velocity arrays in the order ``x``, ``y``, ``vx``, ``vy``.
+    """
     while True:
         ix, iy, ivx, ivy = sample_ic(rng)
         initial_e = total_energy(ix, iy, ivx, ivy)

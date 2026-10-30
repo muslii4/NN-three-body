@@ -1,0 +1,4 @@
+type: mlp
+
+input_dim: 12
+hidden_dim: 128

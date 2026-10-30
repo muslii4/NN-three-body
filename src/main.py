@@ -1,85 +1,107 @@
-import numpy as np
+"""Train a selected three-body model and report test metrics."""
+
+import hydra
 import torch
+from omegaconf import DictConfig
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-from dataset_generator import sample_ic
-from generate_data import generate_data
+from models.baseline import PhysicsResNet
 from models.MLP import MLP
 from preprocessing import load_dataset
 from training import evaluate, train_one_epoch, validate_one_epoch
 
-SEED = 42
-EPOCHS_LEARNING = 100
-EPOCHS_VALIDATION = 10
-LEARNING_RATE = 1e-4
-BATCH_SIZE = 32
 
-rng = np.random.default_rng()
-initial_x, initial_y, initial_vx, initial_vy = sample_ic(rng)
+def create_model(cfg: DictConfig, device: torch.device):
+    """Create the requested model."""
 
-x, y, _, _ = generate_data(
-    15,
-    "verlet",
-    initial_x,
-    initial_y,
-    initial_vx,
-    initial_vy,
-)
-# print(x, y)
-# plot_data(x, y)
-# plot_data_animated(x, y)
+    if cfg.model.type == "mlp":
+        return MLP(
+            input_dim=cfg.model.input_dim,
+            hidden_dim=cfg.model.hidden_dim,
+        ).to(device)
 
-"""
-filepath = "dataset_1k_v1.h5"
-with h5py.File(filepath, "r") as file:
-    print(file.keys())
-    print(file["positions"].shape)
-    i = 0
-    while True:
-        positions = file["positions"][i]
-        print(positions.shape)
-        i += 1
-"""
+    elif cfg.model.type == "resnet":
+        return PhysicsResNet(
+            dt=cfg.model.dt,
+        ).to(device)
 
-training_loader, val_loader, test_loader = load_dataset(
-    "dataset_1k_v1.h5", batchsize=BATCH_SIZE
-)
+    raise ValueError(f"Unknown model type: {cfg.model.type}")
 
-# To get all dataset:
-# training_loader, val_loader, test_loader = load_dataset("dataset_1k_v1.h5", batchsize=BATCH_SIZE, number_trajectories=1000, points_trajectory=150001)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def set_seed(seed: int):
+    torch.manual_seed(seed)
 
-model = MLP().to(device)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-criterion = torch.nn.MSELoss()
 
-for epoch in range(EPOCHS_LEARNING):
-    train_loss = train_one_epoch(
-        model=model,
-        dataloader=training_loader,
-        optimizer=optimizer,
-        criterion=criterion,
-        device=device,
+@hydra.main(version_base=None, config_path="models/conf", config_name="config")
+def run_training(cfg: DictConfig):
+
+    set_seed(cfg.seed)
+
+    training_loader, validation_loader, test_loader = load_dataset(
+        cfg.dataset.path,
+        batchsize=cfg.dataset.batch_size,
     )
-    print(f"Training Epoch {epoch + 1}, Loss: {train_loss:.6f}")
 
-for epoch in range(EPOCHS_VALIDATION):
-    validation_loss = validate_one_epoch(
-        model=model,
-        dataloader=val_loader,
-        criterion=criterion,
-        device=device,
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = create_model(cfg, device)
+
+    print(f"Model: {cfg.model.type}")
+    print(f"Device: {device}")
+    print(f"Learning rate: {cfg.training.learning_rate}")
+
+    criterion = torch.nn.MSELoss()
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=cfg.training.learning_rate,
     )
-    print(f"Validation Epoch {epoch + 1}, Loss: {validation_loss:.6f}")
 
-predictions, labels = evaluate(model=model, dataloader=test_loader, device=device)
+    loss_function = None
 
-predictions = predictions.reshape(-1)
-labels = labels.reshape(-1)
+    if cfg.model.type == "resnet":
+        loss_function = model.loss_function
 
-mae = mean_absolute_error(labels, predictions)
-mse = mean_squared_error(labels, predictions)
+    for epoch in range(cfg.training.epochs):
+        train_loss = train_one_epoch(
+            model,
+            training_loader,
+            optimizer,
+            criterion,
+            device,
+            loss_function=loss_function,
+        )
 
-print(f"MSE={mse}, MAE={mae}")
+        print(f"Training Epoch {epoch + 1}, Loss: {train_loss:.6f}")
+
+    for epoch in range(cfg.training.validation_epochs):
+        validation_loss = validate_one_epoch(
+            model,
+            validation_loader,
+            criterion,
+            device,
+            loss_function=loss_function,
+        )
+
+        print(f"Validation Epoch {epoch + 1}, Loss: {validation_loss:.6f}")
+
+    predictions, labels = evaluate(
+        model,
+        test_loader,
+        device,
+    )
+
+    predictions = predictions.reshape(-1)
+    labels = labels.reshape(-1)
+
+    mae = mean_absolute_error(labels, predictions)
+    mse = mean_squared_error(labels, predictions)
+
+    print(f"MSE={mse}, MAE={mae}")
+
+
+if __name__ == "__main__":
+    run_training()

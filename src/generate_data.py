@@ -29,7 +29,19 @@ def _compute_a(
     ay: Array2D,
     G: float,
 ) -> tuple[Array1D, Array1D]:
-    """Compute the acceleration of each body at a given time."""
+    """Compute the acceleration of each body at a given time.
+
+    Args:
+        x: Current x coordinates of the bodies.
+        y: Current y coordinates of the bodies.
+        M: Body masses.
+        ax: Reusable matrix for pairwise x accelerations.
+        ay: Reusable matrix for pairwise y accelerations.
+        G: Gravitational constant.
+
+    Returns:
+        Total x and y acceleration for each body.
+    """
     for j in range(3):
         for i in range(3):
             if i == j:
@@ -55,6 +67,24 @@ def generate_data(
     initial_vy: InitialConditions = (0.5327, 0.5327, -1.0654),
     step: float = 0.001,
 ) -> tuple[Array2D, Array2D, Array2D, Array2D]:
+    """Integrate a three-body system with Euler or velocity Verlet.
+
+    Args:
+        length: Total simulated time.
+        method: Integration method, either ``"euler"`` or ``"verlet"``.
+        initial_x: Initial x coordinates for the three bodies.
+        initial_y: Initial y coordinates for the three bodies.
+        initial_vx: Initial x velocities for the three bodies.
+        initial_vy: Initial y velocities for the three bodies.
+        step: Integration time step.
+
+    Returns:
+        Four arrays of shape ``(n_steps + 1, 3)`` containing positions and
+        velocities in the order ``x``, ``y``, ``vx``, ``vy``.
+
+    Raises:
+        ValueError: If ``method`` is not a supported integration method.
+    """
     # Body mass
     m1 = m2 = m3 = 1.0
     M = np.array([m1, m2, m3])
@@ -110,6 +140,17 @@ def plot_data_animated(
     x: Array2D,
     y: Array2D,
 ) -> animation.FuncAnimation:
+    """Create and save an animated plot of three-body trajectories.
+
+    The animation is saved as ``three_body.gif`` in the current directory.
+
+    Args:
+        x: X-coordinate history with shape ``(time, 3)``.
+        y: Y-coordinate history with shape ``(time, 3)``.
+
+    Returns:
+        The configured Matplotlib animation.
+    """
     fig, ax = plt.subplots()
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -138,12 +179,14 @@ def plot_data_animated(
     ax.legend()
 
     def init() -> list[Line2D]:
+        """Clear trajectory lines and body markers before animation starts."""
         for line, body in zip(lines, bodies):
             line.set_data([], [])
             body.set_data([], [])
         return lines + bodies
 
     def update(frame: int) -> list[Line2D]:
+        """Update trajectory lines and body markers for one frame."""
         for i, (line, body) in enumerate(zip(lines, bodies)):
             line.set_data(x[: frame + 1, i], y[: frame + 1, i])
             body.set_data([x[frame, i]], [y[frame, i]])
@@ -160,7 +203,8 @@ def plot_data_animated(
         repeat=True,
     )
 
-    plt.show()
+    # plt.show()
+    ani.save("three_body.gif", fps=30, writer="pillow")
     return ani
 
 
@@ -168,6 +212,12 @@ def plot_data(
     x: Array2D,
     y: Array2D,
 ) -> None:
+    """Plot the three trajectories in a static Matplotlib figure.
+
+    Args:
+        x: X-coordinate history with shape ``(time, 3)``.
+        y: Y-coordinate history with shape ``(time, 3)``.
+    """
     plt.figure(1)
     plt.xlabel("x")
     plt.ylabel("y")

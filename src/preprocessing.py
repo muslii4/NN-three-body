@@ -1,3 +1,5 @@
+"""Load trajectory data and split it into PyTorch data loaders."""
+
 from pathlib import Path
 
 import h5py
@@ -16,20 +18,26 @@ def load_dataset(
     seed: int = 42,
 ) -> torch.Tensor:
     """
-    This function prepares the dataset to be the input for a neural network.
-    We construct pairs based on the concept <current state, next state>.
+    Prepare current-state and next-state pairs for neural-network training.
+
+    Each trajectory is flattened into a 12-value state consisting of the
+    positions and velocities of the three bodies. Consecutive states form an
+    input-target pair, and those pairs are split reproducibly into training,
+    validation, and test loaders.
 
     Args:
-    path (str): The path of the file
-    number_trajectories (int): The number of trajectories from the entire dataset that are used for training/testing the model.
-    points_trajectory (int): The number of discrete points in each trajectory chosen for training/testing the model.
-    batchsize (int): Preferred batchsize.
-    training_fraction (int): The percentage of the dataset that is used for training.
-    validation_fraction (int): The percentage of the dataset that is used for validation.
-    seed (int): To ensure the robustness of the results, the seed is fixed during the experiments.
+        path: Path to an HDF5 file with ``positions`` and ``velocities``
+            datasets.
+        number_trajectories: Maximum number of trajectories to load.
+        points_trajectory: Maximum number of time points to load per
+            trajectory.
+        batchsize: Number of state pairs in each loader batch.
+        training_fraction: Fraction of samples assigned to training.
+        validation_fraction: Fraction of samples assigned to validation.
+        seed: Seed used for the reproducible random split.
 
     Returns:
-    train_loader, val_loader, test_loader (torch.Tensor, torch.Tensor, torch.Tensor): Loaded data for each dataset.
+        Training, validation, and test ``DataLoader`` objects.
     """
     filepath = Path(path)
 

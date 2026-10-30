@@ -1,3 +1,5 @@
+"""Generate validated trajectories and store them in an HDF5 dataset."""
+
 import h5py
 import numpy as np
 
