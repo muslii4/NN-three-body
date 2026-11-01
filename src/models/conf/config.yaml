@@ -7,7 +7,7 @@ seed: 42
 
 dataset:
   path: dataset_1k_v1.h5
-  batch_size: 16
+  batch_size: 32
   number_trajectories: 1000
   points_trajectory: 150001
 
