@@ -1,0 +1,3 @@
+- mode=train
+- model=resnet
+- dataset.batch_size=16
