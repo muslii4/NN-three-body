@@ -3,6 +3,22 @@ import torch.nn.functional as F
 from torch import nn
 
 
+class ResidualBlock(nn.Module):
+    """Fully connected residual block."""
+
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, hidden_size),
+        )
+        self.activation = nn.Tanh()
+
+    def forward(self, x):
+        return self.activation(x + self.layers(x))
+
+
 class PhysicsResNet(nn.Module):
     """
     https://arxiv.org/pdf/2503.04585 inspired physics-informed ResNet for the 2D three-body problem.
@@ -49,15 +65,14 @@ class PhysicsResNet(nn.Module):
         self.dt = dt
         self.eps = epsilon
 
-        # Qin-style fully connected network.
-        # Tanh hidden layers and linear output.
-        layers = [nn.Linear(input_size, hidden_size), nn.Tanh()]
-
-        for _ in range(num_layers - 1):
-            layers.extend([nn.Linear(hidden_size, hidden_size), nn.Tanh()])
-
-        layers.append(nn.Linear(hidden_size, input_size))
-        self.network = nn.Sequential(*layers)
+        self.input_layer = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.Tanh(),
+        )
+        self.residual_blocks = nn.Sequential(
+            *(ResidualBlock(hidden_size) for _ in range(num_layers))
+        )
+        self.output_layer = nn.Linear(hidden_size, input_size)
 
     def forward(self, x):
         """Predict the complete state after one fixed time step.
@@ -70,7 +85,9 @@ class PhysicsResNet(nn.Module):
             Predicted state with the same shape as ``x``.
         """
 
-        increment = self.network(x)
+        hidden = self.input_layer(x)
+        hidden = self.residual_blocks(hidden)
+        increment = self.output_layer(hidden)
 
         return x + increment
 

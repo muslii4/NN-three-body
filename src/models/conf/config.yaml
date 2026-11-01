@@ -2,17 +2,29 @@ defaults:
   - model: resnet
   - _self_
 
-mode: train
+mode: train_eval
 seed: 42
 
 dataset:
   path: dataset_1k_v1.h5
-  batch_size: 8
+  batch_size: 32
+  number_trajectories: 1000
+  points_trajectory: 150001
 
 training:
-  epochs: 100
+  epochs: 500
   learning_rate: 0.0001
-  validation_epochs: 10
+
+  early_stopping:
+    patience: 10
+    min_delta: 0.000001
+    max_overfit: 0.65
+
+  lr_scheduler:
+    factor: 0.7
+    patience: 5
+    min_lr: 0.000000001
+
   output_dir: checkpoints/${model.type}
 
 loss:

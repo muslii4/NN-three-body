@@ -1,6 +1,7 @@
 """Train a selected three-body model and report test metrics."""
 
 import os
+from copy import deepcopy
 
 import hydra
 import torch
@@ -11,7 +12,7 @@ from models.baseline import PhysicsResNet
 from models.MLP import MLP
 from preprocessing import load_dataset
 from training import evaluate, train_one_epoch, validate_one_epoch
-from utilts import run_diagnostics
+from utilts import EarlyStopper, plot_loss_history, run_diagnostics
 
 
 def create_model(cfg: DictConfig, device: torch.device):
@@ -39,14 +40,14 @@ def set_seed(seed: int):
 
 
 def get_test_trajectory(test_loader, steps):
-    """Extract one complete trajectory from the eager test dataset."""
+    """Extract one complete trajectory"""
 
     test_subset = test_loader.dataset
     trajectory_index = test_subset.indices[0]
     inputs, targets = test_subset.dataset[trajectory_index]
 
     true_states = torch.cat(
-        (inputs[:1], targets),
+        (inputs[:-1], targets),
         dim=0,
     )
 
@@ -66,13 +67,19 @@ def predict_trajectory(model, true_states, device, steps):
 
 
 def run_training(cfg: DictConfig):
-
-    set_seed(cfg.seed)
     type_model = cfg.model.type
+
+    early_stopper = EarlyStopper(
+        patience=cfg.training.early_stopping.patience,
+        min_delta=cfg.training.early_stopping.min_delta,
+        max_overfit=cfg.training.early_stopping.max_overfit,
+    )
+
     training_loader, validation_loader, test_loader = load_dataset(
         cfg.dataset.path,
+        number_trajectories=cfg.dataset.number_trajectories,
+        points_trajectory=cfg.dataset.points_trajectory,
         batchsize=cfg.dataset.batch_size,
-        points_trajectory=cfg.model.steps + 1,
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -90,10 +97,23 @@ def run_training(cfg: DictConfig):
         lr=cfg.training.learning_rate,
     )
 
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=cfg.training.lr_scheduler.factor,
+        patience=cfg.training.lr_scheduler.patience,
+        min_lr=cfg.training.lr_scheduler.min_lr,
+    )
+
     loss_function = None
 
     if cfg.model.type == "resnet":
         loss_function = model.loss_function
+
+    best_validation_loss = float("inf")
+    best_model_state = None
+    train_losses = []
+    validation_losses = []
 
     for epoch in range(cfg.training.epochs):
         train_loss = train_one_epoch(
@@ -105,9 +125,6 @@ def run_training(cfg: DictConfig):
             loss_function=loss_function,
         )
 
-        print(f"Training Epoch {epoch + 1}, Loss: {train_loss:.6f}")
-
-    for epoch in range(cfg.training.validation_epochs):
         validation_loss = validate_one_epoch(
             model,
             validation_loader,
@@ -116,7 +133,38 @@ def run_training(cfg: DictConfig):
             loss_function=loss_function,
         )
 
-        print(f"Validation Epoch {epoch + 1}, Loss: {validation_loss:.6f}")
+        train_losses.append(train_loss)
+        validation_losses.append(validation_loss)
+        scheduler.step(validation_loss)
+
+        if validation_loss < best_validation_loss:
+            best_validation_loss = validation_loss
+            best_model_state = deepcopy(model.state_dict())
+
+        print(
+            f"Epoch {epoch + 1}: "
+            f"train={train_loss:.6e}, "
+            f"validation={validation_loss:.6e}, "
+            f"lr={optimizer.param_groups[0]['lr']:.3e}"
+        )
+
+        if early_stopper(
+            val_loss=validation_loss,
+            train_loss=train_loss,
+        ):
+            print("Early stopping triggered.")
+            break
+
+    if best_model_state is None:
+        raise RuntimeError("No best model state was saved.")
+
+    model.load_state_dict(best_model_state)
+    plot_loss_history(
+        train_losses,
+        validation_losses,
+        save_dir=os.getcwd(),
+        model_type=type_model,
+    )
 
     predictions, labels = evaluate(
         model,
@@ -178,7 +226,8 @@ def run_evaluation(cfg: DictConfig):
 
     _, _, test_loader = load_dataset(
         cfg.dataset.path,
-        points_trajectory=cfg.model.steps + 1,
+        number_trajectories=cfg.dataset.number_trajectories,
+        points_trajectory=cfg.dataset.points_trajectory,
         batchsize=cfg.dataset.batch_size,
     )
 
@@ -212,9 +261,13 @@ def run_evaluation(cfg: DictConfig):
 
 @hydra.main(version_base=None, config_path="models/conf", config_name="config")
 def main(cfg: DictConfig):
+
     if cfg.mode == "train":
         run_training(cfg)
     elif cfg.mode == "eval":
+        run_evaluation(cfg)
+    elif cfg.mode == "train_eval":
+        run_training(cfg)
         run_evaluation(cfg)
     else:
         raise ValueError(f"Unknown mode: {cfg.mode}")
@@ -222,5 +275,5 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     # to run the model use
-    # uv run main.py {model type}={mlp,resnet} {mode}={train,eval} {steps}=model.steps=x + 1
+    # uv run main.py {model type}={mlp,resnet} {mode}={train,eval, train_eval} {steps}=model.steps=x + 1
     main()

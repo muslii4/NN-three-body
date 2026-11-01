@@ -5,6 +5,29 @@ import numpy as np
 import torch
 
 
+def plot_loss_history(train_losses, validation_losses, save_dir, model_type):
+    """Save training and validation loss curves for one run."""
+    os.makedirs(save_dir, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    epochs = np.arange(1, len(train_losses) + 1)
+
+    ax.plot(epochs, train_losses, label="Training loss")
+    ax.plot(epochs, validation_losses, label="Validation loss")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.set_title(f"{model_type.upper()} training and validation loss")
+    ax.grid(True)
+    ax.legend()
+
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(save_dir, f"loss_curve_{model_type}.png"),
+        dpi=200,
+    )
+    plt.close(fig)
+
+
 def calculate_energy(states, device):
     states = torch.as_tensor(
         states,
@@ -404,3 +427,32 @@ def run_diagnostics(
 
     print(f"Diagnostic plots saved in: {save_dir}")
     return metrics
+
+
+class EarlyStopper:
+    def __init__(
+        self, patience: int = 10, min_delta: float = 0.0, max_overfit: float = 0.65
+    ):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.max_overfit = (
+            max_overfit  # tolerable overfitting gap gotten from the training logs
+        )
+        self.best_loss = float("inf")
+        self.counter = 0
+
+    def __call__(self, val_loss: float, train_loss: float) -> bool:
+        # Check if overfitting exceeds threshold
+        overfit_gap = val_loss - train_loss
+        if overfit_gap > self.max_overfit:
+            print(f"Overfitting detected: gap={overfit_gap:.4f} > {self.max_overfit}")
+            return True
+
+        # Check if validation loss improved
+        if val_loss < (self.best_loss - self.min_delta):
+            self.best_loss = val_loss
+            self.counter = 0
+            return False
+        else:
+            self.counter += 1
+            return self.counter >= self.patience
