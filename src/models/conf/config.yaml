@@ -7,17 +7,17 @@ seed: 42
 
 dataset:
   path: dataset_1k_v1.h5
-  batch_size: 8
-  number_trajectories: 10
-  points_trajectory: 150
+  batch_size: 16
+  number_trajectories: 1000
+  points_trajectory: 150001
 
 training:
-  epochs: 10
+  epochs: 500
   learning_rate: 0.0001
 
   early_stopping:
     patience: 10
-    min_delta: 0.000001
+    min_delta: 0.001
     max_overfit: 0.65
 
   lr_scheduler:
