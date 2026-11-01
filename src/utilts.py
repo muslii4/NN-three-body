@@ -443,7 +443,7 @@ class EarlyStopper:
 
     def __call__(self, val_loss: float, train_loss: float) -> bool:
         # Check if overfitting exceeds threshold
-        overfit_gap = val_loss - train_loss
+        overfit_gap = (val_loss - train_loss) / max(abs(train_loss), 1e-12)
         if overfit_gap > self.max_overfit:
             print(f"Overfitting detected: gap={overfit_gap:.4f} > {self.max_overfit}")
             return True
