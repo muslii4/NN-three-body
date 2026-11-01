@@ -1,17 +1,17 @@
-"""Train a selected three-body model and report test metrics."""
+"""Train a selected three-body model and evaluate test trajectories."""
 
 import os
 from copy import deepcopy
 
 import hydra
+import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from models.baseline import PhysicsResNet
 from models.MLP import MLP
 from preprocessing import load_dataset
-from training import evaluate, train_one_epoch, validate_one_epoch
+from training import train_one_epoch, validate_one_epoch
 from utilts import EarlyStopper, plot_loss_history, run_diagnostics
 
 
@@ -33,25 +33,31 @@ def create_model(cfg: DictConfig, device: torch.device):
 
 
 def set_seed(seed: int):
+    """Set random seeds for reproducibility."""
+
     torch.manual_seed(seed)
 
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
 
-def get_test_trajectory(test_loader, steps):
-    """Extract one complete trajectory"""
+def get_test_trajectories(test_loader, steps):
+    """Extract all complete trajectories from the test dataset."""
 
     test_subset = test_loader.dataset
-    trajectory_index = test_subset.indices[0]
-    inputs, targets = test_subset.dataset[trajectory_index]
+    trajectories = []
 
-    true_states = torch.cat(
-        (inputs[:-1], targets),
-        dim=0,
-    )
+    for trajectory_index in test_subset.indices:
+        inputs, targets = test_subset.dataset[trajectory_index]
 
-    return true_states[: steps + 1]
+        true_states = torch.cat((inputs[:1], targets), dim=0)
+
+        if true_states.shape[0] < steps + 1:
+            raise ValueError(f"Trajectory {trajectory_index} has insufficient states.")
+
+        trajectories.append((trajectory_index, true_states[: steps + 1]))
+
+    return trajectories
 
 
 def predict_trajectory(model, true_states, device, steps):
@@ -67,6 +73,10 @@ def predict_trajectory(model, true_states, device, steps):
 
 
 def run_training(cfg: DictConfig):
+    """Train the selected model and save the best checkpoint."""
+
+    set_seed(cfg.training.seed)
+
     type_model = cfg.model.type
 
     early_stopper = EarlyStopper(
@@ -75,7 +85,7 @@ def run_training(cfg: DictConfig):
         max_overfit=cfg.training.early_stopping.max_overfit,
     )
 
-    training_loader, validation_loader, test_loader = load_dataset(
+    training_loader, validation_loader, _ = load_dataset(
         cfg.dataset.path,
         number_trajectories=cfg.dataset.number_trajectories,
         points_trajectory=cfg.dataset.points_trajectory,
@@ -112,6 +122,7 @@ def run_training(cfg: DictConfig):
 
     best_validation_loss = float("inf")
     best_model_state = None
+
     train_losses = []
     validation_losses = []
 
@@ -135,6 +146,7 @@ def run_training(cfg: DictConfig):
 
         train_losses.append(train_loss)
         validation_losses.append(validation_loss)
+
         scheduler.step(validation_loss)
 
         if validation_loss < best_validation_loss:
@@ -159,6 +171,7 @@ def run_training(cfg: DictConfig):
         raise RuntimeError("No best model state was saved.")
 
     model.load_state_dict(best_model_state)
+
     plot_loss_history(
         train_losses,
         validation_losses,
@@ -166,19 +179,6 @@ def run_training(cfg: DictConfig):
         model_type=type_model,
     )
 
-    predictions, labels = evaluate(
-        model,
-        test_loader,
-        device,
-    )
-
-    predictions = predictions.reshape(-1)
-    labels = labels.reshape(-1)
-
-    mae = mean_absolute_error(labels, predictions)
-    mse = mean_squared_error(labels, predictions)
-
-    print(f"MSE={mse}, MAE={mae}")
     os.makedirs(cfg.training.output_dir, exist_ok=True)
 
     torch.save(
@@ -190,22 +190,16 @@ def run_training(cfg: DictConfig):
         os.path.join(cfg.training.output_dir, "model.pt"),
     )
 
-    return (
-        model,
-        predictions,
-        labels,
-        test_loader,
-        training_loader,
-        validation_loader,
-        device,
-        type_model,
-    )
+    print("Best model saved successfully.")
 
 
 def load_model(cfg: DictConfig, device: torch.device):
     """Load a trained model from a checkpoint."""
 
-    checkpoint_path = os.path.join(cfg.training.output_dir, "model.pt")
+    checkpoint_path = os.path.join(
+        cfg.training.output_dir,
+        "model.pt",
+    )
 
     checkpoint = torch.load(
         checkpoint_path,
@@ -213,13 +207,19 @@ def load_model(cfg: DictConfig, device: torch.device):
         weights_only=False,
     )
 
+    if checkpoint["model_type"] != cfg.model.type:
+        raise ValueError("Checkpoint model type does not match configuration.")
+
     model = create_model(cfg, device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
+
     return model
 
 
 def run_evaluation(cfg: DictConfig):
+    """Evaluate all test trajectories and plot the first 10."""
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = load_model(cfg, device)
@@ -231,12 +231,24 @@ def run_evaluation(cfg: DictConfig):
         batchsize=cfg.dataset.batch_size,
     )
 
-    if cfg.model.type in ("resnet", "mlp"):
-        true_states = get_test_trajectory(
-            test_loader,
-            steps=cfg.model.steps,
-        )
+    # Extract ALL test trajectories
+    trajectories = get_test_trajectories(
+        test_loader,
+        steps=cfg.model.steps,
+    )
 
+    all_metrics = []
+    all_predictions = []
+
+    diagnostics_dir = os.path.join(
+        cfg.training.output_dir,
+        "diagnostics",
+    )
+    os.makedirs(diagnostics_dir, exist_ok=True)
+
+    print(f"Evaluating {len(trajectories)} test trajectories")
+
+    for i, (trajectory_index, true_states) in enumerate(trajectories):
         predicted_states = predict_trajectory(
             model,
             true_states,
@@ -246,34 +258,81 @@ def run_evaluation(cfg: DictConfig):
 
         true_states = true_states.cpu().numpy()
 
+        # Only plot the first 10 trajectories
+        make_plots = i < 10
+
+        save_dir = os.path.join(
+            diagnostics_dir,
+            f"trajectory_{i + 1:03d}_dataset_{trajectory_index}",
+        )
+
         metrics = run_diagnostics(
             model,
             true_states=true_states,
             predicted_states=predicted_states,
             dt=cfg.model.dt,
             device=device,
+            save_dir=save_dir,
             model_type=cfg.model.type,
             steps=cfg.model.steps,
+            make_plots=make_plots,
         )
 
-        print(metrics)
+        all_metrics.append(metrics)
+
+        all_predictions.append(
+            {
+                "trajectory_index": trajectory_index,
+                "true_states": true_states,
+                "predicted_states": predicted_states,
+            }
+        )
+
+        if i < 10:
+            print(f"\nTrajectory {i + 1} (dataset index {trajectory_index}):")
+            print(metrics)
+
+    if not all_metrics:
+        raise RuntimeError("No test trajectories found.")
+
+    # Calculate aggregate metrics over ALL test trajectories
+    print("\n========== FINAL TEST RESULTS (ALL TRAJECTORIES) ==========")
+
+    metric_names = all_metrics[0].keys()
+
+    for metric_name in metric_names:
+        values = [
+            metrics[metric_name]
+            for metrics in all_metrics
+            if np.isscalar(metrics[metric_name]) and np.isfinite(metrics[metric_name])
+        ]
+
+        if values:
+            print(f"{metric_name}: {np.mean(values):.6e} +/- {np.std(values):.6e}")
+
+    return all_predictions, all_metrics
 
 
-@hydra.main(version_base=None, config_path="models/conf", config_name="config")
+@hydra.main(
+    version_base=None,
+    config_path="models/conf",
+    config_name="config",
+)
 def main(cfg: DictConfig):
 
     if cfg.mode == "train":
         run_training(cfg)
+
     elif cfg.mode == "eval":
-        run_evaluation(cfg)
+        _, _ = run_evaluation(cfg)
+
     elif cfg.mode == "train_eval":
         run_training(cfg)
-        run_evaluation(cfg)
+        _, _ = run_evaluation(cfg)
+
     else:
         raise ValueError(f"Unknown mode: {cfg.mode}")
 
 
 if __name__ == "__main__":
-    # to run the model use
-    # uv run main.py {model type}={mlp,resnet} {mode}={train,eval, train_eval} {steps}=model.steps=x + 1
     main()

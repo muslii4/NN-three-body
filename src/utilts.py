@@ -29,6 +29,7 @@ def plot_loss_history(train_losses, validation_losses, save_dir, model_type):
 
 
 def calculate_energy(states, device):
+    """Calculate kinetic, potential and total energy."""
     states = torch.as_tensor(
         states,
         dtype=torch.float32,
@@ -38,15 +39,23 @@ def calculate_energy(states, device):
     with torch.no_grad():
         velocities = states[..., 6:].reshape(*states.shape[:-1], 3, 2)
         positions = states[..., :6].reshape(*states.shape[:-1], 3, 2)
+
         kinetic = 0.5 * torch.sum(velocities**2, dim=(-1, -2))
+
         distances = torch.linalg.vector_norm(
             positions.unsqueeze(-2) - positions.unsqueeze(-3),
             dim=-1,
         )
+
         pair_distances = torch.stack(
-            (distances[..., 0, 1], distances[..., 0, 2], distances[..., 1, 2]),
+            (
+                distances[..., 0, 1],
+                distances[..., 0, 2],
+                distances[..., 1, 2],
+            ),
             dim=-1,
         ).clamp_min(1e-8)
+
         potential = -torch.sum(1.0 / pair_distances, dim=-1)
         total = kinetic + potential
 
@@ -58,6 +67,7 @@ def calculate_energy(states, device):
 
 
 def calculate_vector_fields(model, states, device):
+    """Calculate true and learned vector fields."""
     states = torch.as_tensor(
         states,
         dtype=torch.float32,
@@ -77,8 +87,13 @@ def calculate_vector_fields(model, states, device):
 
 
 def plot_trajectories(
-    true_states, predicted_states, save_dir, model_type="resnet", steps=1
+    true_states,
+    predicted_states,
+    save_dir,
+    model_type="resnet",
+    steps=1,
 ):
+    """Plot true and predicted trajectories of all three bodies."""
 
     true_positions = true_states[:, :6].reshape(-1, 3, 2)
     predicted_positions = predicted_states[:, :6].reshape(-1, 3, 2)
@@ -115,19 +130,28 @@ def plot_trajectories(
 
     fig.tight_layout()
     fig.savefig(
-        os.path.join(save_dir, f"trajectories_{model_type}_{steps}.png"), dpi=200
+        os.path.join(
+            save_dir,
+            f"trajectories_{model_type}_{steps}.png",
+        ),
+        dpi=200,
     )
     plt.close(fig)
 
 
 def plot_position_error(
-    true_states, predicted_states, dt, save_dir, model_type="resnet", steps=1
+    true_states,
+    predicted_states,
+    dt,
+    save_dir,
+    model_type="resnet",
+    steps=1,
 ):
+    """Plot position prediction error over time."""
 
     true_positions = true_states[:, :6].reshape(-1, 3, 2)
     predicted_positions = predicted_states[:, :6].reshape(-1, 3, 2)
 
-    # Euclidean distance between predicted and true positions
     errors = np.linalg.norm(
         predicted_positions - true_positions,
         axis=2,
@@ -152,13 +176,16 @@ def plot_position_error(
 
     fig.tight_layout()
     fig.savefig(
-        os.path.join(save_dir, f"position_error_{model_type}_{steps}.png"), dpi=200
+        os.path.join(
+            save_dir,
+            f"position_error_{model_type}_{steps}.png",
+        ),
+        dpi=200,
     )
     plt.close(fig)
 
 
 def plot_energy(
-    model,
     true_states,
     predicted_states,
     dt,
@@ -167,9 +194,9 @@ def plot_energy(
     model_type="resnet",
     steps=1,
 ):
+    """Plot kinetic, potential and total energy differences."""
 
     true_T, true_V, true_E = calculate_energy(true_states, device)
-
     pred_T, pred_V, pred_E = calculate_energy(predicted_states, device)
 
     time = np.arange(len(true_states)) * dt
@@ -205,20 +232,27 @@ def plot_energy(
 
     fig.tight_layout()
     fig.savefig(
-        os.path.join(save_dir, f"energy_differences_{model_type}_{steps}.png"),
+        os.path.join(
+            save_dir,
+            f"energy_differences_{model_type}_{steps}.png",
+        ),
         dpi=200,
     )
     plt.close(fig)
 
 
 def plot_vector_field(
-    model, reference_state, device, save_dir, grid_size=20, model_type="resnet"
+    model,
+    reference_state,
+    device,
+    save_dir,
+    grid_size=20,
+    model_type="resnet",
 ):
+    """Plot true and learned vector fields around one reference state."""
+
     model.eval()
     reference_state = np.asarray(reference_state, dtype=np.float32)
-
-    # x-axis: x1
-    # y-axis: vx1
 
     x_values = np.linspace(
         reference_state[0] - 1.0,
@@ -253,10 +287,9 @@ def plot_vector_field(
     ]
 
     for ax, (field, title) in zip(axes, fields):
-        # dx1/dt = vx1
         U = field[:, 0].reshape(X.shape)
-        # dvx1/dt = ax1
         V = field[:, 6].reshape(X.shape)
+
         ax.quiver(
             X,
             VX,
@@ -275,7 +308,10 @@ def plot_vector_field(
     fig.suptitle("True versus learned vector field")
     fig.tight_layout()
 
-    fig.savefig(os.path.join(save_dir, f"vector_field_{model_type}.png"), dpi=200)
+    fig.savefig(
+        os.path.join(save_dir, f"vector_field_{model_type}.png"),
+        dpi=200,
+    )
     plt.close(fig)
 
 
@@ -286,12 +322,14 @@ def numerical_diagnostics(
     device,
     model_type="resnet",
 ):
+    """Calculate numerical prediction and physical consistency metrics."""
 
     true_states = np.asarray(true_states)
     predicted_states = np.asarray(predicted_states)
 
     true_pos = true_states[:, :6].reshape(-1, 3, 2)
     pred_pos = predicted_states[:, :6].reshape(-1, 3, 2)
+
     true_vel = true_states[:, 6:].reshape(-1, 3, 2)
     pred_vel = predicted_states[:, 6:].reshape(-1, 3, 2)
 
@@ -318,26 +356,19 @@ def numerical_diagnostics(
         "max_position_error": max_position_error,
     }
 
-    print("\n========== NUMERICAL DIAGNOSTICS ==========")
-    print("\nPrediction accuracy:")
-    print(f"Position MSE:             {position_mse}")
-    print(f"Position MAE:             {position_mae}")
-    print(f"Velocity MSE:             {velocity_mse}")
-    print(f"Velocity MAE:             {velocity_mae}")
-    print(f"Maximum position error:   {max_position_error}")
-
     if model_type in ("resnet", "mlp"):
         _, _, predicted_energy = calculate_energy(predicted_states, device)
+
         true_T, true_V, _ = calculate_energy(true_states[:1], device)
+
         energy_scale = abs(true_T[0]) + abs(true_V[0]) + 1e-8
+
         relative_energy_drift = (
             np.abs(predicted_energy - predicted_energy[0]) / energy_scale
         )
-        max_relative_energy_drift = np.max(relative_energy_drift)
-        metrics["max_relative_energy_drift"] = max_relative_energy_drift
-        print("\nPhysical consistency:")
-        print(f"Maximum relative energy drift:{max_relative_energy_drift}")
-    print("===========================================\n")
+
+        metrics["max_relative_energy_drift"] = np.max(relative_energy_drift)
+
     return metrics
 
 
@@ -347,18 +378,22 @@ def run_diagnostics(
     predicted_states,
     dt,
     device,
-    save_dir="outputs/diagnostics",
-    model_type="resnet",
-    steps=1,
+    save_dir,
+    model_type,
+    steps,
+    make_plots=True,
 ):
-    os.makedirs(save_dir, exist_ok=True)
+    """Run numerical diagnostics and optionally generate figures."""
 
-    true_states = np.asarray(true_states)
-    predicted_states = np.asarray(predicted_states)
+    if make_plots:
+        os.makedirs(save_dir, exist_ok=True)
 
-    if model_type == "resnet":
         plot_trajectories(
-            true_states, predicted_states, save_dir, model_type=model_type, steps=steps
+            true_states,
+            predicted_states,
+            save_dir,
+            model_type,
+            steps,
         )
 
         plot_position_error(
@@ -366,67 +401,36 @@ def run_diagnostics(
             predicted_states,
             dt,
             save_dir,
-            model_type=model_type,
-            steps=steps,
+            model_type,
+            steps,
         )
 
         plot_energy(
-            model,
             true_states,
             predicted_states,
             dt,
             device,
             save_dir,
-            model_type=model_type,
-            steps=steps,
+            model_type,
+            steps,
         )
 
-        reference_state = true_states[len(true_states) // 2]
+        if model_type == "resnet":
+            plot_vector_field(
+                model,
+                true_states[0],
+                device,
+                save_dir,
+                model_type=model_type,
+            )
 
-        plot_vector_field(
-            model, reference_state, device, save_dir, model_type=model_type
-        )
-
-    elif model_type == "mlp":
-        plot_trajectories(
-            true_states,
-            predicted_states,
-            save_dir,
-            model_type=model_type,
-            steps=steps,
-        )
-
-        plot_position_error(
-            true_states,
-            predicted_states,
-            dt,
-            save_dir,
-            model_type=model_type,
-            steps=steps,
-        )
-
-        plot_energy(
-            model,
-            true_states,
-            predicted_states,
-            dt,
-            device,
-            save_dir,
-            model_type=model_type,
-            steps=steps,
-        )
-
-    # Numerical diagnostics
-    metrics = numerical_diagnostics(
+    return numerical_diagnostics(
         model,
         true_states,
         predicted_states,
         device,
-        model_type=model_type,
+        model_type,
     )
-
-    print(f"Diagnostic plots saved in: {save_dir}")
-    return metrics
 
 
 class EarlyStopper:
@@ -452,14 +456,13 @@ class EarlyStopper:
         train_loss: float,
         overfit_max: bool = False,
     ) -> bool:
+
         self.epoch += 1
 
-        # Ignore early overfitting for n steps
         if self.epoch <= self.warmup_epochs:
             self.best_loss = min(self.best_loss, val_loss)
             return False
 
-        # Overfitting Check
         safe_train_loss = max(train_loss, 1e-8)
         overfit_ratio = val_loss / safe_train_loss
 
@@ -469,7 +472,6 @@ class EarlyStopper:
             )
             return True
 
-        # Standard Early Stopping
         if val_loss < self.best_loss - self.min_delta:
             self.best_loss = val_loss
             self.counter = 0
