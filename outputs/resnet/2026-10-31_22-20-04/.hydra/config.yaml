@@ -1,0 +1,19 @@
+model:
+  type: resnet
+  dt: 0.0001
+  steps: 1
+mode: train
+seed: 42
+dataset:
+  path: dataset_1k_v1.h5
+  batch_size: 8
+training:
+  epochs: 100
+  learning_rate: 0.0001
+  validation_epochs: 10
+  output_dir: checkpoints/${model.type}
+loss:
+  type: mse
+optimizer:
+  type: adam
+steps: 4

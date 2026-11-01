@@ -1,3 +1,4 @@
+import torch
 from torch import Tensor, nn
 
 
@@ -37,3 +38,14 @@ class MLP(nn.Module):
         Tensor with the predicted output of the forward pass.
         """
         return self.network(x)
+
+    def predict(self, initial_state: Tensor, steps: int = 1) -> Tensor:
+        """Predict a trajectory by applying the n-step transition forward."""
+        trajectory = [initial_state]
+        state = initial_state
+
+        for _ in range(steps):
+            state = self.forward(state)
+            trajectory.append(state)
+
+        return torch.stack(trajectory, dim=1)

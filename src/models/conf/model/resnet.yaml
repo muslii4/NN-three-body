@@ -1,3 +1,4 @@
 type: resnet
 
 dt: 0.0001
+steps: 1

@@ -1,0 +1,3 @@
+- mode=eval
+- model=resnet
+- model.steps=50

@@ -1,0 +1,19 @@
+{
+  "files.watcherExclude": {
+    "**/outputs/**": true,
+    "**/checkpoints/**": true,
+    "**/*.h5": true
+  },
+  "search.exclude": {
+    "**/outputs/**": true,
+    "**/checkpoints/**": true,
+    "**/*.h5": true
+  },
+  "python.analysis.exclude": [
+    "**/outputs/**",
+    "**/checkpoints/**",
+    "**/*.h5"
+  ],
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "python.analysis.indexing": false
+}

@@ -1,0 +1,3 @@
+- +steps=100
+- mode=train
+- model=MLP

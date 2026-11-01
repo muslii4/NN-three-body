@@ -1,0 +1,3 @@
+- model=MLP
+- mode=eval
+- model.steps=5

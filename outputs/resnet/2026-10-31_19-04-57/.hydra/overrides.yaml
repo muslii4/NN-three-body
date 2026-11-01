@@ -1,0 +1,3 @@
+- mode=train
+- model=resnet
+- model.steps=1

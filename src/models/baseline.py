@@ -27,7 +27,7 @@ class PhysicsResNet(nn.Module):
         num_layers=5,
         G=1.0,
         masses=(1.0, 1.0, 1.0),
-        dt=1e-2,
+        dt=1e-4,
         epsilon=1e-8,
     ):
         """Initialize the residual network and physical-system parameters.
@@ -97,9 +97,7 @@ class PhysicsResNet(nn.Module):
         )
 
         a1 = self.G * (m2 * r12_vec / r12**3 + m3 * r13_vec / r13**3)
-
         a2 = self.G * (-m1 * r12_vec / r12**3 + m3 * r23_vec / r23**3)
-
         a3 = self.G * (-m1 * r13_vec / r13**3 - m2 * r23_vec / r23**3)
 
         return torch.cat([a1, a2, a3], dim=-1)
@@ -198,19 +196,19 @@ class PhysicsResNet(nn.Module):
         delta_T = T1 - T0
         delta_V = V1 - V0
 
-        # delta_T + delta_V = 0
         residual = delta_T + delta_V
-        epsilon_abs = torch.abs(residual)
 
-        epsilon_rel = epsilon_abs / (torch.abs(delta_T) + torch.abs(delta_V) + self.eps)
+        # Scale using the magnitudes of kinetic and potential energy.
+        energy_scale = torch.abs(T0) + torch.abs(V0) + self.eps
 
-        # Squared residual for training
-        loss_energy = torch.mean(residual**2)
+        relative_residual = residual / energy_scale
+
+        loss_energy = torch.mean(relative_residual**2)
 
         return {
             "energy_loss": loss_energy,
-            "energy_abs": torch.mean(epsilon_abs),
-            "energy_rel": torch.mean(epsilon_rel),
+            "energy_abs": torch.mean((delta_T) ** 2),
+            "energy_rel": torch.mean(relative_residual**2),
             "delta_T": torch.mean(delta_T),
             "delta_V": torch.mean(delta_V),
         }
@@ -240,7 +238,7 @@ class PhysicsResNet(nn.Module):
         a1 = self.gravitational_acceleration(x_next)
 
         # Kinematic constraint:
-        q_residual = q1 - q0 - 0.5 * dt * (v0 + v1)
+        q_residual = q1 - q0 - dt * v0 - 0.5 * dt**2 * a0
         loss_kinematics = torch.mean(q_residual**2)
 
         # Dynamic constraint:
