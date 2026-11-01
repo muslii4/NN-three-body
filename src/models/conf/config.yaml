@@ -16,8 +16,8 @@ training:
   learning_rate: 0.0001
 
   early_stopping:
-    patience: 10
-    warmup_epochs: 15
+    patience: 15
+    warmup_epochs: 45
     min_delta: 0.00001
     max_overfit: 2.5
 
