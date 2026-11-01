@@ -1,0 +1,29 @@
+model:
+  type: resnet
+  dt: 0.0001
+  steps: 1
+  number_trajectories: 100
+  points_trajectory: 10
+mode: train_eval
+seed: 42
+dataset:
+  path: dataset_1k_v1.h5
+  batch_size: 32
+  number_trajectories: 1000
+  points_trajectory: 150001
+training:
+  epochs: 500
+  learning_rate: 0.0001
+  early_stopping:
+    patience: 10
+    min_delta: 1.0e-06
+    max_overfit: 0.65
+  lr_scheduler:
+    factor: 0.7
+    patience: 5
+    min_lr: 1.0e-09
+  output_dir: checkpoints/${model.type}
+loss:
+  type: mse
+optimizer:
+  type: adam

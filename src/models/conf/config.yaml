@@ -17,8 +17,9 @@ training:
 
   early_stopping:
     patience: 10
-    min_delta: 0.001
-    max_overfit: 0.65
+    warmup_epochs: 15
+    min_delta: 0.00001
+    max_overfit: 2.5
 
   lr_scheduler:
     factor: 0.7

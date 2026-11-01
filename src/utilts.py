@@ -431,22 +431,54 @@ def run_diagnostics(
 
 class EarlyStopper:
     def __init__(
-        self, patience: int = 10, min_delta: float = 0.0, max_overfit: float = 0.65
+        self,
+        patience: int = 40,
+        min_delta: float = 1e-5,
+        max_overfit: float = 1.5,
+        warmup_epochs: int = 15,
     ):
         self.patience = patience
         self.min_delta = min_delta
-        self.max_overfit = (
-            max_overfit  # tolerable overfitting gap gotten from the training logs
-        )
+        self.max_overfit = max_overfit
+        self.warmup_epochs = warmup_epochs
+
         self.best_loss = float("inf")
         self.counter = 0
+        self.epoch = 0
 
-    def __call__(self, val_loss: float, train_loss: float) -> bool:
-        # Check if validation loss improved
-        if val_loss < (self.best_loss - self.min_delta):
+    def __call__(
+        self,
+        val_loss: float,
+        train_loss: float,
+        overfit_max: bool = False,
+    ) -> bool:
+        self.epoch += 1
+
+        # Ignore early overfitting for n steps
+        if self.epoch <= self.warmup_epochs:
+            self.best_loss = min(self.best_loss, val_loss)
+            return False
+
+        # Overfitting Check
+        safe_train_loss = max(train_loss, 1e-8)
+        overfit_ratio = val_loss / safe_train_loss
+
+        if overfit_max and overfit_ratio > self.max_overfit:
+            print(
+                f"Overfitting detected: ratio={overfit_ratio:.4f} > {self.max_overfit}"
+            )
+            return True
+
+        # Standard Early Stopping
+        if val_loss < self.best_loss - self.min_delta:
             self.best_loss = val_loss
             self.counter = 0
             return False
-        else:
-            self.counter += 1
-            return self.counter >= self.patience
+
+        self.counter += 1
+
+        if self.counter >= self.patience:
+            print(f"Patience exceeded: no improvement for {self.patience} epochs.")
+            return True
+
+        return False
