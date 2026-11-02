@@ -24,6 +24,7 @@ def create_model(cfg: DictConfig, device: torch.device):
         return MLP(
             input_dim=cfg.model.input_dim,
             hidden_dim=cfg.model.hidden_dim,
+            dt=cfg.model.dt,
         ).to(device)
 
     elif cfg.model.type == "resnet":
@@ -134,6 +135,10 @@ def run_training(cfg: DictConfig):
 
     loss_function = None
     validation_loss_function = None
+
+    if cfg.model.type == "mlp":
+        loss_function = model.data_loss
+        validation_loss_function = model.data_loss
 
     if cfg.model.type == "resnet":
         loss_function = model.loss_function
