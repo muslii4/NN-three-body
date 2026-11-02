@@ -29,8 +29,11 @@ training:
     min_lr: 0.000000001
 
   output_dir: checkpoints/${model.type}
-  # Optional explicit checkpoint for mode=eval. Defaults to
-  # output_dir/model.pt, which points at the most recent run.
+  # For mode=eval: point at a run directory containing model.pt. Eval figures
+  # are written to <checkpoint_dir>/diagnostics.
+  checkpoint_dir: null
+  # Optional explicit checkpoint file (or directory) for backwards
+  # compatibility. Defaults to output_dir/model.pt, the most recent run.
   checkpoint: null
 
 loss:

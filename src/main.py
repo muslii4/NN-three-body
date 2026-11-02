@@ -230,15 +230,32 @@ def run_training(cfg: DictConfig):
     print(f"Latest checkpoint updated at {latest_checkpoint_path}")
 
 
-def load_model(cfg: DictConfig, device: torch.device):
-    """Load a trained model from a checkpoint."""
+def resolve_checkpoint_path(cfg: DictConfig) -> str:
+    """Return the checkpoint file for evaluation.
+
+    ``training.checkpoint_dir`` takes precedence and refers to a run directory
+    containing ``model.pt``. ``training.checkpoint`` may be either a file or a
+    directory for backwards compatibility. If neither is set, the latest
+    checkpoint in ``training.output_dir`` is used.
+    """
+
+    checkpoint_dir = cfg.training.get("checkpoint_dir")
+    if checkpoint_dir is not None:
+        return os.path.join(checkpoint_dir, "model.pt")
 
     checkpoint_path = cfg.training.get("checkpoint")
-    if checkpoint_path is None:
-        checkpoint_path = os.path.join(
-            cfg.training.output_dir,
-            "model.pt",
-        )
+    if checkpoint_path is not None:
+        if os.path.isdir(checkpoint_path):
+            return os.path.join(checkpoint_path, "model.pt")
+        return checkpoint_path
+
+    return os.path.join(cfg.training.output_dir, "model.pt")
+
+
+def load_model(cfg: DictConfig, device: torch.device):
+    """Load a trained model and build its architecture from the checkpoint."""
+
+    checkpoint_path = resolve_checkpoint_path(cfg)
 
     checkpoint = torch.load(
         checkpoint_path,
@@ -246,14 +263,21 @@ def load_model(cfg: DictConfig, device: torch.device):
         weights_only=False,
     )
 
-    if checkpoint["model_type"] != cfg.model.type:
-        raise ValueError("Checkpoint model type does not match configuration.")
+    # Rebuild exactly the architecture that was trained, even when the CLI
+    # model selection differs from the checkpoint.
+    checkpoint_config = checkpoint.get("config") or {}
+    checkpoint_model_config = checkpoint_config.get("model")
+    model_config = (
+        OmegaConf.create({"model": checkpoint_model_config})
+        if checkpoint_model_config is not None
+        else cfg
+    )
 
-    model = create_model(cfg, device)
+    model = create_model(model_config, device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
-    return model
+    return model, checkpoint
 
 
 def run_evaluation(cfg: DictConfig):
@@ -261,7 +285,15 @@ def run_evaluation(cfg: DictConfig):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = load_model(cfg, device)
+    model, checkpoint = load_model(cfg, device)
+
+    checkpoint_config = checkpoint.get("config") or {}
+    checkpoint_model_config = checkpoint_config.get("model") or {}
+    model_type = checkpoint.get("model_type", cfg.model.type)
+    dt = checkpoint_model_config.get("dt", cfg.model.get("dt", 1e-4))
+
+    # The CLI rollout length remains overridable with model.steps=...
+    steps = cfg.model.get("steps", checkpoint_model_config.get("steps", 1))
 
     _, _, test_loader = load_dataset(
         cfg.dataset.path,
@@ -274,16 +306,14 @@ def run_evaluation(cfg: DictConfig):
     # Extract ALL test trajectories
     trajectories = get_test_trajectories(
         test_loader,
-        steps=cfg.model.steps,
+        steps=steps,
     )
 
     all_metrics = []
     all_predictions = []
 
-    diagnostics_dir = os.path.join(
-        cfg.training.output_dir,
-        "diagnostics",
-    )
+    checkpoint_dir = os.path.dirname(resolve_checkpoint_path(cfg))
+    diagnostics_dir = os.path.join(checkpoint_dir, "diagnostics")
     os.makedirs(diagnostics_dir, exist_ok=True)
 
     print(f"Evaluating {len(trajectories)} test trajectories")
@@ -293,7 +323,7 @@ def run_evaluation(cfg: DictConfig):
             model,
             true_states,
             device,
-            steps=cfg.model.steps,
+            steps=steps,
         )
 
         true_states = true_states.cpu().numpy()
@@ -310,11 +340,11 @@ def run_evaluation(cfg: DictConfig):
             model,
             true_states=true_states,
             predicted_states=predicted_states,
-            dt=cfg.model.dt,
+            dt=dt,
             device=device,
             save_dir=save_dir,
-            model_type=cfg.model.type,
-            steps=cfg.model.steps,
+            model_type=model_type,
+            steps=steps,
             make_plots=make_plots,
         )
 
