@@ -249,63 +249,68 @@ def plot_vector_field(
     grid_size=20,
     model_type="resnet",
 ):
-    """Plot true and learned vector fields around one reference state."""
+    """Plot true and learned vector fields for all three bodies."""
 
     model.eval()
     reference_state = np.asarray(reference_state, dtype=np.float32)
 
-    x_values = np.linspace(
-        reference_state[0] - 1.0,
-        reference_state[0] + 1.0,
-        grid_size,
-    )
+    fig, axes = plt.subplots(3, 2, figsize=(13, 15), squeeze=False)
 
-    vx_values = np.linspace(
-        reference_state[6] - 1.0,
-        reference_state[6] + 1.0,
-        grid_size,
-    )
+    for body_index in range(3):
+        position_index = 2 * body_index
+        velocity_index = 6 + position_index
 
-    X, VX = np.meshgrid(x_values, vx_values)
+        x_values = np.linspace(
+            reference_state[position_index] - 1.0,
+            reference_state[position_index] + 1.0,
+            grid_size,
+        )
+        vx_values = np.linspace(
+            reference_state[velocity_index] - 1.0,
+            reference_state[velocity_index] + 1.0,
+            grid_size,
+        )
+        X, VX = np.meshgrid(x_values, vx_values)
 
-    states = np.repeat(
-        reference_state[None, :],
-        grid_size * grid_size,
-        axis=0,
-    )
+        states = np.repeat(
+            reference_state[None, :],
+            grid_size * grid_size,
+            axis=0,
+        )
+        states[:, position_index] = X.ravel()
+        states[:, velocity_index] = VX.ravel()
 
-    states[:, 0] = X.ravel()
-    states[:, 6] = VX.ravel()
-
-    true_field, learned_field = calculate_vector_fields(model, states, device)
-
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-
-    fields = [
-        (true_field, "True vector field"),
-        (learned_field, "Learned vector field"),
-    ]
-
-    for ax, (field, title) in zip(axes, fields):
-        U = field[:, 0].reshape(X.shape)
-        V = field[:, 6].reshape(X.shape)
-
-        ax.quiver(
-            X,
-            VX,
-            U,
-            V,
-            angles="xy",
-            scale_units="xy",
-            scale=None,
+        true_field, learned_field = calculate_vector_fields(
+            model,
+            states,
+            device,
         )
 
-        ax.set_xlabel(r"$x_1$")
-        ax.set_ylabel(r"$v_{x1}$")
-        ax.set_title(title)
-        ax.grid(True)
+        for column_index, (field, title) in enumerate(
+            (
+                (true_field, "True vector field"),
+                (learned_field, "Learned vector field"),
+            )
+        ):
+            ax = axes[body_index, column_index]
+            U = field[:, position_index].reshape(X.shape)
+            V = field[:, velocity_index].reshape(X.shape)
 
-    fig.suptitle("True versus learned vector field")
+            ax.quiver(
+                X,
+                VX,
+                U,
+                V,
+                angles="xy",
+                scale_units="xy",
+                scale=None,
+            )
+            ax.set_xlabel(rf"$x_{body_index + 1}$")
+            ax.set_ylabel(rf"$v_{{x{body_index + 1}}}$")
+            ax.set_title(f"Body {body_index + 1}: {title}")
+            ax.grid(True)
+
+    fig.suptitle("True versus learned vector fields for all three bodies")
     fig.tight_layout()
 
     fig.savefig(
