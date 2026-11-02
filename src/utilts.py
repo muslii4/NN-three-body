@@ -356,7 +356,7 @@ def numerical_diagnostics(
         "max_position_error": max_position_error,
     }
 
-    if model_type in ("resnet", "mlp"):
+    if model_type in ("resnet", "resnetv2", "mlp"):
         _, _, predicted_energy = calculate_energy(predicted_states, device)
 
         true_T, true_V, _ = calculate_energy(true_states[:1], device)
@@ -415,7 +415,7 @@ def run_diagnostics(
             steps,
         )
 
-        if model_type == "resnet":
+        if model_type in ("resnet", "resnetv2"):
             plot_vector_field(
                 model,
                 true_states[0],

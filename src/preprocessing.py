@@ -16,6 +16,7 @@ def load_dataset(
     training_fraction: float = 0.6,
     validation_fraction: float = 0.2,
     seed: int = 42,
+    flatten_transitions: bool = False,
 ) -> torch.Tensor:
     """
     Prepare current-state and next-state pairs for neural-network training.
@@ -35,6 +36,8 @@ def load_dataset(
         training_fraction: Fraction of samples assigned to training.
         validation_fraction: Fraction of samples assigned to validation.
         seed: Seed used for the reproducible random split.
+        flatten_transitions: If true, treat every ``(state, next_state)`` pair
+            as an independent sample instead of batching whole trajectories.
 
     Returns:
         Training, validation, and test ``DataLoader`` objects.
@@ -42,28 +45,32 @@ def load_dataset(
     filepath = Path(path)
 
     with h5py.File(filepath, "r") as file:
-        print(file.keys())
-        print(file["positions"].shape)
+        print(file.keys(), flush=True)
+        print(file["positions"].shape, flush=True)
         positions = file["positions"][:number_trajectories, :points_trajectory]
         velocities = file["velocities"][:number_trajectories, :points_trajectory]
 
-    print(f"positions shape: {positions.shape}")
-    print(f"velocities shape: {velocities.shape}")
+    print(f"positions shape: {positions.shape}", flush=True)
+    print(f"velocities shape: {velocities.shape}", flush=True)
 
     positions = positions.reshape(*positions.shape[:2], 6)
     velocities = velocities.reshape(*velocities.shape[:2], 6)
-    print(f"positions shape: {positions.shape}")
-    print(f"velocities shape: {velocities.shape}")
+    print(f"positions shape: {positions.shape}", flush=True)
+    print(f"velocities shape: {velocities.shape}", flush=True)
 
     inputs = np.concatenate([positions, velocities], axis=-1)
+    del positions, velocities
 
-    x = inputs[:, :-1, :]
-    y = inputs[:, 1:, :]
-    print(x.shape)
-    print(y.shape)
+    x = torch.tensor(inputs[:, :-1, :], dtype=torch.float32)
+    y = torch.tensor(inputs[:, 1:, :], dtype=torch.float32)
+    del inputs
 
-    x = torch.tensor(x, dtype=torch.float32)
-    y = torch.tensor(y, dtype=torch.float32)
+    if flatten_transitions:
+        x = x.reshape(-1, x.shape[-1])
+        y = y.reshape(-1, y.shape[-1])
+
+    print(x.shape, flush=True)
+    print(y.shape, flush=True)
 
     dataset = TensorDataset(x, y)
     samples_train = int(training_fraction * len(dataset))
@@ -71,7 +78,8 @@ def load_dataset(
     samples_eval = len(dataset) - samples_train - samples_val
 
     print(
-        f"size training dataset: {samples_train}, size val dataset: {samples_val}, size eval dataset: {samples_eval}"
+        f"size training dataset: {samples_train}, size val dataset: {samples_val}, size eval dataset: {samples_eval}",
+        flush=True,
     )
 
     generator = torch.Generator().manual_seed(seed)

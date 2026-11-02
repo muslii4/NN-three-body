@@ -10,6 +10,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from models.baseline import PhysicsResNet
 from models.MLP import MLP
+from models.resnetv2 import PhysicsResNetV2
 from preprocessing import load_dataset
 from training import train_one_epoch, validate_one_epoch
 from utilts import EarlyStopper, plot_loss_history, run_diagnostics
@@ -27,6 +28,20 @@ def create_model(cfg: DictConfig, device: torch.device):
     elif cfg.model.type == "resnet":
         return PhysicsResNet(
             dt=cfg.model.dt,
+        ).to(device)
+
+    elif cfg.model.type == "resnetv2":
+        return PhysicsResNetV2(
+            input_size=cfg.model.get("input_size", 12),
+            hidden_size=cfg.model.get("hidden_size", 256),
+            num_layers=cfg.model.get("num_layers", 5),
+            G=cfg.model.get("G", 1.0),
+            masses=tuple(cfg.model.get("masses", (1.0, 1.0, 1.0))),
+            dt=cfg.model.dt,
+            epsilon=cfg.model.get("epsilon", 1e-8),
+            lambda_kinematics=cfg.model.get("lambda_kinematics", 0.1),
+            lambda_dynamics=cfg.model.get("lambda_dynamics", 0.1),
+            lambda_energy=cfg.model.get("lambda_energy", 0.01),
         ).to(device)
 
     raise ValueError(f"Unknown model type: {cfg.model.type}")
@@ -75,7 +90,7 @@ def predict_trajectory(model, true_states, device, steps):
 def run_training(cfg: DictConfig):
     """Train the selected model and save the best checkpoint."""
 
-    set_seed(cfg.training.seed)
+    set_seed(cfg.training.get("seed", cfg.get("seed", 42)))
 
     type_model = cfg.model.type
 
@@ -90,6 +105,7 @@ def run_training(cfg: DictConfig):
         number_trajectories=cfg.dataset.number_trajectories,
         points_trajectory=cfg.dataset.points_trajectory,
         batchsize=cfg.dataset.batch_size,
+        flatten_transitions=cfg.dataset.get("flatten_transitions", True),
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -116,9 +132,17 @@ def run_training(cfg: DictConfig):
     )
 
     loss_function = None
+    validation_loss_function = None
 
     if cfg.model.type == "resnet":
         loss_function = model.loss_function
+        validation_loss_function = model.loss_function
+
+    if cfg.model.type == "resnetv2":
+        loss_function = model.loss_function
+        # Select checkpoints using the supervised loss only, so a physics
+        # runaway cannot be chosen as the "best" model.
+        validation_loss_function = model.data_loss
 
     best_validation_loss = float("inf")
     best_model_state = None
@@ -134,6 +158,7 @@ def run_training(cfg: DictConfig):
             criterion,
             device,
             loss_function=loss_function,
+            grad_clip=cfg.training.get("grad_clip", 1.0),
         )
 
         validation_loss = validate_one_epoch(
@@ -141,7 +166,7 @@ def run_training(cfg: DictConfig):
             validation_loader,
             criterion,
             device,
-            loss_function=loss_function,
+            loss_function=validation_loss_function,
         )
 
         train_losses.append(train_loss)
@@ -229,6 +254,7 @@ def run_evaluation(cfg: DictConfig):
         number_trajectories=cfg.dataset.number_trajectories,
         points_trajectory=cfg.dataset.points_trajectory,
         batchsize=cfg.dataset.batch_size,
+        flatten_transitions=False,
     )
 
     # Extract ALL test trajectories

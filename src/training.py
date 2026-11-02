@@ -20,6 +20,7 @@ def train_one_epoch(
     criterion,
     device,
     loss_function=None,
+    grad_clip=1.0,
 ):
     """Train a model for one epoch and return its sample-weighted loss.
 
@@ -32,6 +33,7 @@ def train_one_epoch(
         loss_function: Optional model-specific loss function accepting
             ``(inputs, targets)``. It may return either a loss tensor or a
             ``(loss, components)`` tuple.
+        grad_clip: Maximum gradient norm. Non-positive values disable clipping.
 
     Returns:
         The mean loss over all samples in ``dataloader``.
@@ -47,11 +49,23 @@ def train_one_epoch(
         y = y.to(device)
         optimizer.zero_grad()
         loss = _compute_loss(model, x, y, criterion, loss_function)
+
+        if not torch.isfinite(loss):
+            optimizer.zero_grad()
+            continue
+
         loss.backward()
+
+        if grad_clip is not None and grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
         optimizer.step()
         batch_size = x.size(0)
         total_loss = total_loss + loss.item() * batch_size
         total_samples = total_samples + batch_size
+
+    if total_samples == 0:
+        return float("nan")
 
     return total_loss / total_samples
 

@@ -1,0 +1,5 @@
+- model=resnetv2
+- mode=train
+- model.lambda_kinematics=0
+- model.lambda_dynamics=0
+- model.lambda_energy=0

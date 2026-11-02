@@ -10,15 +10,17 @@ dataset:
   batch_size: 32
   number_trajectories: 1000
   points_trajectory: 150001
+  flatten_transitions: true
 
 training:
   epochs: 500
   learning_rate: 0.0001
+  grad_clip: 1.0
 
   early_stopping:
-    patience: 300
-    warmup_epochs: 45
-    min_delta: 0.00001
+    patience: 30
+    warmup_epochs: 15
+    min_delta: 0.000001
     max_overfit: 2.5
 
   lr_scheduler:
