@@ -2,6 +2,7 @@
 
 import os
 from copy import deepcopy
+from datetime import datetime
 
 import hydra
 import numpy as np
@@ -197,34 +198,47 @@ def run_training(cfg: DictConfig):
 
     model.load_state_dict(best_model_state)
 
+    # Keep every run, while also maintaining a stable "latest" checkpoint for
+    # evaluation and plotting.
+    run_dir = os.path.join(
+        cfg.training.output_dir,
+        datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f"),
+    )
+    os.makedirs(run_dir, exist_ok=True)
+    os.makedirs(cfg.training.output_dir, exist_ok=True)
+
     plot_loss_history(
         train_losses,
         validation_losses,
-        save_dir=os.getcwd(),
+        save_dir=run_dir,
         model_type=type_model,
     )
 
-    os.makedirs(cfg.training.output_dir, exist_ok=True)
+    checkpoint = {
+        "model_state_dict": model.state_dict(),
+        "model_type": cfg.model.type,
+        "config": OmegaConf.to_container(cfg, resolve=True),
+    }
 
-    torch.save(
-        {
-            "model_state_dict": model.state_dict(),
-            "model_type": cfg.model.type,
-            "config": OmegaConf.to_container(cfg, resolve=True),
-        },
-        os.path.join(cfg.training.output_dir, "model.pt"),
-    )
+    run_checkpoint_path = os.path.join(run_dir, "model.pt")
+    latest_checkpoint_path = os.path.join(cfg.training.output_dir, "model.pt")
 
-    print("Best model saved successfully.")
+    torch.save(checkpoint, run_checkpoint_path)
+    torch.save(checkpoint, latest_checkpoint_path)
+
+    print(f"Run checkpoint saved to {run_checkpoint_path}")
+    print(f"Latest checkpoint updated at {latest_checkpoint_path}")
 
 
 def load_model(cfg: DictConfig, device: torch.device):
     """Load a trained model from a checkpoint."""
 
-    checkpoint_path = os.path.join(
-        cfg.training.output_dir,
-        "model.pt",
-    )
+    checkpoint_path = cfg.training.get("checkpoint")
+    if checkpoint_path is None:
+        checkpoint_path = os.path.join(
+            cfg.training.output_dir,
+            "model.pt",
+        )
 
     checkpoint = torch.load(
         checkpoint_path,

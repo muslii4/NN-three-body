@@ -29,6 +29,9 @@ training:
     min_lr: 0.000000001
 
   output_dir: checkpoints/${model.type}
+  # Optional explicit checkpoint for mode=eval. Defaults to
+  # output_dir/model.pt, which points at the most recent run.
+  checkpoint: null
 
 loss:
   type: mse
